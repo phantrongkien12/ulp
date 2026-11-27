@@ -2,10 +2,13 @@ import asyncio
 import importlib.util
 import sys
 from pathlib import Path
+from asyncio import start_server
 
 import uvloop
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 from helpers.logger import LOGGER
 from bot import ItsMrULPBot, start_bot
@@ -39,29 +42,29 @@ def load_handlers():
                 LOGGER.error(f"Failed to load {module_name}: {e}")
 
 
-async def run_bot():
-    await start_bot()
+async def health_check_handler(reader, writer):
+    await reader.read(1024)
+    writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nOK")
+    await writer.drain()
+    writer.close()
 
-    # 1. Đăng ký bộ lọc chặn quyền toàn cục & theo dõi Pool Channel TRƯỚC khi load các lệnh khác
+
+async def run_bot():
+    await start_server(health_check_handler, "0.0.0.0", 8000)
+    await start_bot()
     setup_access_control(ItsMrULPBot)
     register_channel_watcher(ItsMrULPBot)
-
-    # 2. Nạp toàn bộ handlers gốc của bot (core/ và modules/)
     load_handlers()
-
-    # 3. Đồng bộ toàn bộ file .txt từ Pool Channel về thư mục data/
     await sync_from_channel_on_startup(ItsMrULPBot)
-
-    me = await ItsMrULPBot.get_me()
-    LOGGER.info(f"Bot Successfully Started! 💥")
+    LOGGER.info("Bot Successfully Started!")
     await ItsMrULPBot.run_until_disconnected()
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run_bot())
+        loop.run_until_complete(run_bot())
     except KeyboardInterrupt:
-        LOGGER.info("Bot stopped by user (KeyboardInterrupt)")
+        LOGGER.info("Bot stopped by user")
     except Exception as e:
         LOGGER.error(f"Fatal error: {e}")
         sys.exit(1)
