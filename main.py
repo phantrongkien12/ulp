@@ -9,6 +9,8 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 from helpers.logger import LOGGER
 from bot import ItsMrULPBot, start_bot
+from helpers.auth import setup_access_control
+from helpers.cloud_sync import sync_from_channel_on_startup, register_channel_watcher
 
 HANDLER_DIRS = [
     Path(__file__).parent / "core",
@@ -39,7 +41,17 @@ def load_handlers():
 
 async def run_bot():
     await start_bot()
+
+    # 1. Đăng ký bộ lọc chặn quyền toàn cục & theo dõi Pool Channel TRƯỚC khi load các lệnh khác
+    setup_access_control(ItsMrULPBot)
+    register_channel_watcher(ItsMrULPBot)
+
+    # 2. Nạp toàn bộ handlers gốc của bot (core/ và modules/)
     load_handlers()
+
+    # 3. Đồng bộ toàn bộ file .txt từ Pool Channel về thư mục data/
+    await sync_from_channel_on_startup(ItsMrULPBot)
+
     me = await ItsMrULPBot.get_me()
     LOGGER.info(f"Bot Successfully Started! 💥")
     await ItsMrULPBot.run_until_disconnected()
